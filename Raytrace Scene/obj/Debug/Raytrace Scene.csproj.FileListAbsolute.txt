@@ -1,0 +1,6 @@
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\bin\Debug\Raytrace_Scene.exe
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\bin\Debug\Raytrace_Scene.pdb
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\obj\Debug\Raytrace Scene.csprojAssemblyReference.cache
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\obj\Debug\Raytrace Scene.csproj.CoreCompileInputs.cache
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\obj\Debug\Raytrace_Scene.exe
+D:\Projects\RiderProjects\Raytrace Scene\Raytrace Scene\obj\Debug\Raytrace_Scene.pdb
