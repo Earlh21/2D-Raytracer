@@ -1,11 +1,12 @@
 using System.Collections.Generic;
 using System.Numerics;
 using Raytrace_Scene.Maths;
+using Raytrace_Scene.Objects;
 using Raytrace_Scene.Shapes;
 
 namespace Raytrace_Scene.Materials
 {
-	public class Light : Material
+	public class Light : EmissiveMaterial
 	{
 		public Vector3 Color { get; set; }
 
@@ -14,9 +15,14 @@ namespace Raytrace_Scene.Materials
 			Color = color;
 		}
 
-		public override Ray? GetNewRay(Shape shape, Ray ray)
+		public override Vector3 GetColor(SolidObject solid_object, Vector2 point)
 		{
-			return null;
+			return Color;
+		}
+
+		public override bool BounceRay(Shape shape, Ray ray)
+		{
+			return false;
 		}
 	}
 }

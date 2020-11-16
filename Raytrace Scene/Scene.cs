@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using Raytrace_Scene.Materials;
+using Raytrace_Scene.Maths;
+using Raytrace_Scene.Objects;
+using Raytrace_Scene.Shapes;
 
 namespace Raytrace_Scene
 {
@@ -12,6 +16,55 @@ namespace Raytrace_Scene
 
 		public int Width { get; private set; }
 		public int Height { get; private set; }
+
+		public SceneObject GetCollider(Ray ray)
+		{
+			SceneObject collider = ray.Medium;
+			float min_distance = float.MaxValue;
+
+			if (ray.Medium != null)
+			{
+				min_distance = (ray.Medium.GetIntersectPoint(ray) - ray.Origin).LengthSquared();
+			}
+
+			foreach (SceneObject scene_object in SceneObjects)
+			{
+				if (scene_object == ray.Medium)
+				{
+					continue;
+				}
+					
+				if (scene_object.RayIntersects(ray))
+				{
+					Vector2 intersect_point = scene_object.GetIntersectPoint(ray);
+					float distance = (intersect_point - ray.Origin).LengthSquared();
+
+					if (distance < min_distance)
+					{
+						collider = scene_object;
+						min_distance = distance;
+					}
+				}
+			}
+
+			return collider;
+		}
+
+		public TransparentObject GetMedium(Vector2 point)
+		{
+			foreach (SceneObject scene_object in SceneObjects)
+			{
+				if (scene_object is TransparentObject medium)
+				{
+					if (medium.ContainsPoint(point))
+					{
+						return medium;
+					}
+				}
+			}
+
+			return null;
+		}
 
 		public Scene(string filename)
 		{
@@ -27,84 +80,88 @@ namespace Raytrace_Scene
 
 				while (reader.Peek() != -1)
 				{
-					string line = reader.ReadLine().Replace(" ", "");
+					string[] object_data = reader.ReadLine().Split('|');
 
-					string[] line_data = line.Split(',');
-					if (line_data[0].Equals("wall"))
+					if (object_data[0][0] == '#')
 					{
-						float x_left = (float) Convert.ToDouble(line_data[1]);
-						float y_bottom = (float) Convert.ToDouble(line_data[2]);
-						float x_right = (float) Convert.ToDouble(line_data[3]);
-						float y_top = (float) Convert.ToDouble(line_data[4]);
-						float roughness = (float) Convert.ToDouble(line_data[5]);
+						continue;
+					}
+					
+					Shape shape;
+					Material material;
 
-						Wall wall = new Wall(Polygon.CreateRectangle(x_left, y_bottom, x_right, y_top), roughness);
-						SceneObjects.Add(wall);
-					}
-					else if (line_data[0].Equals("light"))
+					string[] shape_data = object_data[0].Split(',');
+					string[] material_data = object_data[1].Split(',');
+					
+					switch (shape_data[0])
 					{
-						float x_left = (float) Convert.ToDouble(line_data[1]);
-						float y_bottom = (float) Convert.ToDouble(line_data[2]);
-						float x_right = (float) Convert.ToDouble(line_data[3]);
-						float y_top = (float) Convert.ToDouble(line_data[4]);
+						case "circle":
+							float x = (float) Convert.ToDouble(shape_data[1]);
+							float y = (float) Convert.ToDouble(shape_data[2]);
+							float radius = (float) Convert.ToDouble(shape_data[3]);
+							
+							shape = new Circle(x, y, radius);
+							break;
+						case "box":
+							float x_left = (float) Convert.ToDouble(shape_data[1]);
+							float y_bottom = (float) Convert.ToDouble(shape_data[2]);
+							float x_right = (float) Convert.ToDouble(shape_data[3]);
+							float y_top = (float) Convert.ToDouble(shape_data[4]);
+							
+							shape = Polygon.CreateRectangle(x_left, y_bottom, x_right, y_top);
+							break;
+						case "torus":
+							float x2 = (float) Convert.ToDouble(shape_data[1]);
+							float y2 = (float) Convert.ToDouble(shape_data[2]);
+							float inner_radius = (float) Convert.ToDouble(shape_data[3]);
+							float outer_radius = (float) Convert.ToDouble(shape_data[4]);
 
-						float r = (float) Convert.ToDouble(line_data[5]);
-						float g = (float) Convert.ToDouble(line_data[6]);
-						float b = (float) Convert.ToDouble(line_data[7]);
+							shape = new Torus(new Vector2(x2, y2), inner_radius, outer_radius);
+							break;
+						default:
+							throw new ArgumentException("Invalid shape type.");
+					}
 
-						SceneObjects.Add(new Light(Polygon.CreateRectangle(x_left, y_bottom, x_right, y_top),
-							new Vector3(r, g, b)));
-					}
-					else if (line_data[0].Equals("circle"))
+					switch (material_data[0])
 					{
-						float x = (float) Convert.ToDouble(line_data[1]);
-						float y = (float) Convert.ToDouble(line_data[2]);
-						float radius = (float) Convert.ToDouble(line_data[3]);
-						float r = (float) Convert.ToDouble(line_data[4]);
-						float g = (float) Convert.ToDouble(line_data[5]);
-						float b = (float) Convert.ToDouble(line_data[6]);
+						case "light":
+							float r = (float) Convert.ToDouble(material_data[1]);
+							float g = (float) Convert.ToDouble(material_data[2]);
+							float b = (float) Convert.ToDouble(material_data[3]);
 
-						SceneObjects.Add(new Light(new Circle(new Vector2(x, y), radius), new Vector3(r, g, b)));
-					}
-					else if (line_data[0].Equals("circlewall"))
-					{
-						float x = (float) Convert.ToDouble(line_data[1]);
-						float y = (float) Convert.ToDouble(line_data[2]);
-						float radius = (float) Convert.ToDouble(line_data[3]);
-						float roughness = (float) Convert.ToDouble(line_data[4]);
-						
-						SceneObjects.Add(new Wall(new Circle(new Vector2(x, y) ,radius), roughness));
-					}
-					else if (line_data[0].Equals("transparent"))
-					{
-						float x_left = (float) Convert.ToDouble(line_data[1]);
-						float y_bottom = (float) Convert.ToDouble(line_data[2]);
-						float x_right = (float) Convert.ToDouble(line_data[3]);
-						float y_top = (float) Convert.ToDouble(line_data[4]);
-						float ior = (float) Convert.ToDouble(line_data[5]);
-						float opacity = (float) Convert.ToDouble(line_data[6]);
-						float roughness = (float) Convert.ToDouble(line_data[7]);
+							material = new Light(new Vector3(r, g, b));
+							break;
+						case "diffuse":
+							float roughness = (float) Convert.ToDouble(material_data[1]);
 
-						Shape shape = Polygon.CreateRectangle(x_left, y_bottom, x_right, y_top);
-						TransparentWall wall = new TransparentWall(shape, ior, opacity, roughness);
-						SceneObjects.Add(wall);
+							material = new Diffuse(roughness);
+							break;
+						case "glass":
+							float ior = (float) Convert.ToDouble(material_data[1]);
+							float r2 = (float) Convert.ToDouble(material_data[2]);
+							float g2 = (float) Convert.ToDouble(material_data[3]);
+							float b2 = (float) Convert.ToDouble(material_data[4]);
+
+							material = new Glass(ior, new Vector3(r2,g2,b2));
+							break;
+						case "rainbow":
+							float intensity = (float) Convert.ToDouble(material_data[1]);
+							float band_length = (float) Convert.ToDouble(material_data[2]);
+							
+							material = new RainbowLight(intensity, band_length);
+							break;
+						default:
+							throw new ArgumentException("Invalid material.");
 					}
-					else if (line_data[0].Equals("transparentcircle"))
+
+					if (material is SolidMaterial solid_mat)
 					{
-						float x = (float) Convert.ToDouble(line_data[1]);
-						float y = (float) Convert.ToDouble(line_data[2]);
-						float radius = (float) Convert.ToDouble(line_data[3]);
-						float ior = (float) Convert.ToDouble(line_data[4]);
-						float opacity = (float) Convert.ToDouble(line_data[5]);
-						float roughness = (float) Convert.ToDouble(line_data[6]);
-						
-						Shape shape = new Circle(new Vector2(x, y), radius);
-						var wall = new TransparentWall(shape, ior, opacity, roughness);
-						SceneObjects.Add(wall);
+						SceneObjects.Add(new SolidObject(shape, solid_mat));
 					}
-					else
+
+					if (material is TransparentMaterial trans_mat)
 					{
-						throw new ArgumentException("Invalid object type found");
+						SceneObjects.Add(new TransparentObject(shape, trans_mat));
 					}
 				}
 			}

@@ -1,260 +1,211 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Drawing;
-using System.Linq;
-using System.Net.Mime;
 using System.Numerics;
-using System.Threading;
 using System.Threading.Tasks;
 using Raytrace_Scene.Extension;
-using Raytrace_Scene.Utility;
+using Raytrace_Scene.Materials;
+using Raytrace_Scene.Maths;
+using Raytrace_Scene.Objects;
 
 namespace Raytrace_Scene
 {
 	public static class CPURenderer
 	{
-		private const int SAMPLES = 5000;
+		public static int Samples = 100;
+		private const int MAX_BOUNCES = 0;
 
-		private const int MAX_BOUNCES = 2;
-
-		//TODO: Weird stuff happens with this at 1
-		private const float STEP_SIZE = 2.0f;
-		private const float MAX_STEPS = 1024;
-		private static readonly Random R;
-
-		static CPURenderer()
+		private static Vector3 Sample(Ray ray, Scene scene)
 		{
-			R = new Random(100);
-		}
-
-		private static Vector3 Sample(Vector2 origin, float angle, Scene scene, SceneObject[,] pixel_map, TransparentWall medium)
-		{
-			float multiplier = 1;
-			
-			if (medium != null)
-			{
-				multiplier *= 1 - medium.Opacity;
-			}
-
 			int bounces = 0;
-			Vector2 pos = origin;
-			Vector2 dir = new Vector2((float) Math.Cos(angle), (float) Math.Sin(angle)) * STEP_SIZE;
 
-			for (int j = 0; j < MAX_STEPS; j++)
+			while (true)
 			{
-				pos += dir;
+				SceneObject collider = scene.GetCollider(ray);
 
-				if (pos.X < 0 || pos.Y < 0 || pos.X >= scene.Width || pos.Y >= scene.Height)
+				if (collider == null)
 				{
-					break;
+					return Vector3.Zero;
 				}
 
-				var pos_object = pixel_map[(int) pos.X, (int) pos.Y];
-
-				if (pos_object == null)
+				if (collider == ray.Medium)
 				{
-					if (medium != null && !medium.ContainsPoint(pos))
-					{
-						
-						
-						dir = new Vector2((float) Math.Cos(angle), (float) Math.Sin(angle)) * STEP_SIZE;
-						pos += dir;
-						origin = pos;
+					Vector2 new_point = collider.GetIntersectPoint(ray) + ray.Direction * 0.01f;
+					TransparentObject new_medium = scene.GetMedium(new_point);
 
-						medium = null;
-					}
-					
-					continue;
-				}
+					bool ray_exists = ray.Medium.RefractRayOut(ray, new_medium);
 
-				if (pos_object is Light light)
-				{
-					if (light.ContainsPoint(pos))
+					if (!ray_exists)
 					{
-						return multiplier * light.Color / SAMPLES;
+						return Vector3.Zero;
 					}
-				}
-
-				//TODO: Bounces
-				//TODO: Support for medium-to-medium changes
-				if (pos_object is TransparentWall transparent_wall)
-				{
-					if (medium != null)
-					{
-						continue;
-					}
-					
-					if (!pos_object.ContainsPoint(pos))
-					{
-						continue;
-					}
-
-					
 
 					continue;
 				}
 
-				if (pos_object is Wall wall)
+				if (collider is TransparentObject transparent_collider)
 				{
-					if (!pos_object.ContainsPoint(pos))
+					bool ray_exists = transparent_collider.RefractRayIn(ray);
+
+					if (!ray_exists)
 					{
-						continue;
+						return Vector3.Zero;
+					}
+
+					continue;
+				}
+
+				if (collider is SolidObject solid_collider)
+				{
+					if (solid_collider.Material is EmissiveMaterial light)
+					{
+						Vector3 light_color = light.GetColor(solid_collider, solid_collider.GetIntersectPoint(ray));
+						
+						float ray_color_mag = ray.Color.Length();
+
+						if (ray_color_mag == 0)
+						{
+							return light_color;
+						}
+
+						Vector3 ray_color = ray.Color / ray_color_mag;
+
+						if (ray_color_mag > 1)
+						{
+							return light_color.Multiply(ray_color);
+						}
+
+						return light_color * (1 - ray_color_mag) + light_color.Multiply(ray_color) * ray_color_mag;
 					}
 
 					bounces++;
 
 					if (bounces > MAX_BOUNCES)
 					{
-						break;
+						return Vector3.Zero;
 					}
 
-					float normal = wall.Shape.GetNormal(origin, angle);
-					angle = Mathf.NormalizeAngle(normal + ((float) R.NextDouble() - 0.5f) * Mathf.PI2 * 0.99f);
-						
-					multiplier *= 1 - wall.Roughness;
+					bool ray_exists = solid_collider.BounceRay(ray);
 
-					dir = new Vector2((float) Math.Cos(angle), (float) Math.Sin(angle)) * STEP_SIZE;
-					pos += dir;
-					origin = pos;
+					if (!ray_exists)
+					{
+						return Vector3.Zero;
+					}
+				}
+			}
+		}
+
+		private static Vector3 RenderPixel(int x, int y, Scene scene, Random R, float scale)
+		{
+			Vector2 pixel_pos = new Vector2(x + 0.5f, y + 0.5f) / scale;
+
+			TransparentObject medium = null;
+			foreach (SceneObject scene_object in scene.SceneObjects)
+			{
+				if (scene_object.ContainsPoint(pixel_pos))
+				{
+					if (scene_object is SolidObject solid_object)
+					{
+						return solid_object.Material.GetColor(solid_object,
+							pixel_pos);
+					}
+
+					if (scene_object is TransparentObject transparent_object)
+					{
+						medium = transparent_object;
+						break;
+					}
 				}
 			}
 
-			return Vector3.Zero;
-		}
-
-		private static Vector3 RenderPixel(int x, int y, Scene scene, SceneObject[,] pixel_map)
-		{
-			if (x == 0 && y == 19)
-			{
-				;
-			}
-			
-			Vector2 pixel_pos = new Vector2(x + 0.5f, y + 0.5f);
-
-			TransparentWall medium = null;
-			
-			var pixel_object = pixel_map[x, y];
-			if (pixel_object is Light light)
-			{
-				return light.Color;
-			}
-
-			if (pixel_object is Wall)
-			{
-				return Vector3.Zero;
-			}
-
-			if (pixel_object is TransparentWall transparent_wall)
-			{
-				medium = transparent_wall;
-			}
-
+			Ray ray = new Ray(Vector2.Zero, Vector2.Zero, null, Vector3.Zero);
 			Vector3 color = Vector3.Zero;
-			for (int i = 0; i < SAMPLES; i++)
+			for (int i = 0; i < Samples; i++)
 			{
 				float angle = (float) R.NextDouble() * Mathf.PI2;
-
-				color += Sample(pixel_pos, angle, scene, pixel_map, medium);
+				ray.Origin = pixel_pos;
+				ray.Direction = Mathf.FromAngle(angle);
+				ray.Medium = medium;
+				ray.Color = Vector3.Zero;
+				color += Sample(ray, scene) / Samples;
 			}
 
 			return color;
 		}
 
-		private static SceneObject[,] GeneratePixelMap(Scene scene)
+		public static void RenderPass(Vector3[,] pass, Scene scene, Random R, float scale , RenderProgress progress)
 		{
-			var map = new SceneObject[scene.Width, scene.Height];
-			for (int i = 0; i < scene.Width; i++)
+			for (int i = 0; i < pass.GetLength(0); i++)
 			{
-				for (int j = 0; j < scene.Height; j++)
+				for (int j = 0; j < pass.GetLength(1); j++)
 				{
-					Vector2[] points =
+					pass[i, j] = RenderPixel(i, j, scene, R, scale);
+				}
+				
+				progress.FinishLine();
+			}
+		}
+
+		private static Vector3[,] AveragePasses(Vector3[][,] passes)
+		{
+			Vector3[,] average = new Vector3[passes[0].GetLength(0), passes[0].GetLength(1)];
+
+			foreach (Vector3[,] pass in passes)
+			{
+				for (int i = 0; i < average.GetLength(0); i++)
+				{
+					for (int j = 0; j < average.GetLength(1); j++)
 					{
-						new Vector2(i + 0.1f, j + 0.1f),
-						new Vector2(i + 0.1f, j + 0.9f),
-						new Vector2(i + 0.9f, j + 0.1f),
-						new Vector2(i + 0.9f, j + 0.9f),
-					};
-
-					foreach (Vector2 pos in points)
-					{
-						foreach (Wall wall in scene.Walls)
-						{
-							if (wall.ContainsPoint(pos))
-							{
-								map[i, j] = wall;
-								goto NextPixel;
-							}
-						}
-
-						foreach (Light light in scene.Lights)
-						{
-							if (light.ContainsPoint(pos))
-							{
-								map[i, j] = light;
-								goto NextPixel;
-							}
-						}
-
-						foreach (TransparentWall medium in scene.TransparentWalls)
-						{
-							if (medium.ContainsPoint(pos))
-							{
-								map[i, j] = medium;
-								goto NextPixel;
-							}
-						}
+						average[i, j] += pass[i, j] / Environment.ProcessorCount;
 					}
-
-					map[i, j] = null;
-
-					NextPixel: ;
 				}
 			}
 
-			return map;
+			return average;
 		}
 
-		private static void RenderSection(Vector3[,] image, int y_min, int y_max, Scene scene,
-			SceneObject[,] pixel_map)
+		private static void FillImage(Vector3[,] render, DirectBitmap image)
 		{
-			int width = image.GetLength(0);
-			for (int i = 0; i < width; i++)
+			for (int i = 0; i < image.Width; i++)
 			{
-				for (int j = y_min; j <= y_max; j++)
+				for (int j = 0; j < image.Height; j++)
 				{
-					image[i, j] = RenderPixel(i, j, scene, pixel_map);
+					image.SetPixel(i, image.Height - j - 1, render[i, j].ToColor());
 				}
 			}
 		}
 
-		public static Bitmap Render(Scene scene)
+		public static Bitmap Render(Scene scene, float scale, EventHandler<RenderProgress.LineCompletedEventArgs> progress_handler = null)
 		{
-			var pixel_map = GeneratePixelMap(scene);
-			Vector3[,] render = new Vector3[scene.Width, scene.Height];
-			DirectBitmap result = new DirectBitmap(scene.Width, scene.Height);
-
-			int line = 0;
-			var ranges = new Tuple<int, int>[Environment.ProcessorCount];
-
-			int height = scene.Height / Environment.ProcessorCount;
-			for (int i = 0; i < Environment.ProcessorCount - 1; i++)
+			int image_width = (int)(scene.Width * scale);
+			int image_height = (int)(scene.Height * scale);
+			DirectBitmap result = new DirectBitmap(image_width, image_height);
+			
+			RenderProgress progress = new RenderProgress(image_width * Environment.ProcessorCount);
+			progress.LineCompletedEvent += progress_handler;
+			
+			Vector3[][,] passes = new Vector3[Environment.ProcessorCount][,];
+			Task[] tasks = new Task[Environment.ProcessorCount];
+			Random[] randoms = new Random[Environment.ProcessorCount];
+			randoms[0] = new Random(Program.R.Next());
+			
+			for (int i = 0; i < Environment.ProcessorCount; i++)
 			{
-				ranges[i] = new Tuple<int, int>(line, line + height);
-				line += height;
-			}
+				passes[i] = new Vector3[image_width, image_height];
 
-			ranges[Environment.ProcessorCount - 1] = new Tuple<int, int>(line, scene.Height - 1);
-
-			//Array.ForEach(ranges, range => { RenderSection(render, range.Item1, range.Item2, scene, pixel_map); });
-
-			for (int i = 0; i < scene.Width; i++)
-			{
-				for (int j = 0; j < scene.Height; j++)
+				if (i != 0)
 				{
-					result.SetPixel(i, scene.Height - j - 1, RenderPixel(i, j, scene, pixel_map).ToColor());
+					randoms[i] = new Random(randoms[i - 1].Next());
 				}
-
-				Console.WriteLine($"{(int) ((float) i / (float) scene.Width * 100)}% done...");
 			}
+
+			Parallel.ForEach(passes, (pass, state, index) =>
+			{
+				RenderPass(pass, scene, randoms[index], scale, progress);
+			});
+
+			Vector3[,] average = AveragePasses(passes);
+			FillImage(average, result);
 
 			return result.Bitmap;
 		}

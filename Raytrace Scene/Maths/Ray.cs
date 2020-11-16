@@ -1,16 +1,21 @@
 using System.Numerics;
+using Raytrace_Scene.Objects;
 
 namespace Raytrace_Scene.Maths
 {
-	public struct Ray
+	public class Ray
 	{
-		public Vector2 Origin { get; }
-		public float Angle { get; }
+		public Vector2 Origin { get; set; }
+		public Vector2 Direction { get; set; }
+		public TransparentObject Medium { get; set; }
+		public Vector3 Color { get; set; }
 
-		public Ray(Vector2 origin, float angle)
+		public Ray(Vector2 origin, Vector2 direction, TransparentObject medium, Vector3 color)
 		{
 			Origin = origin;
-			Angle = angle;
+			Direction = direction / direction.Length();
+			Medium = medium;
+			Color = color;
 		}
 	}
 }

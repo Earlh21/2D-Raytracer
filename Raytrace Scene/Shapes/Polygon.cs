@@ -9,7 +9,7 @@ namespace Raytrace_Scene.Shapes
     public class Polygon : Shape
     {
         private List<Vector2> points;
-        private List<Line> lines;
+        private List<LineSegment> lines;
         private Rectangle AABB;
         public float Roughness { get; set; }
 
@@ -19,26 +19,29 @@ namespace Raytrace_Scene.Shapes
             set
             {
                 points = value;
-                lines = new List<Line>();
+                lines = new List<LineSegment>();
                 for (int i = 0, w = points.Count; i < w; i++)
                 {
                     lines.Add(GenerateLine(i));
                 }
 
-                Line test_line = lines[0];
-                float test_normal = test_line.Angle + (float) Math.PI / 2;
-                Vector2 test_point = test_line.Midpoint -
+                LineSegment test_line_segment = lines[0];
+                float test_normal = test_line_segment.Angle + (float) Math.PI / 2;
+                Vector2 test_point = test_line_segment.Midpoint -
                                      new Vector2((float) Math.Cos(test_normal), (float) Math.Sin(test_normal)) * 0.001f;
                 bool clockwise = !ContainsPoint(test_point);
                 
-                foreach (Line line in lines)
+                foreach (LineSegment line in lines)
                 {
-                    line.Normal = line.Angle + (float)Math.PI / 2 * (clockwise ? 1 : -1);
+                    Vector2 direction = line.End - line.Start;
+                    line.Normal = clockwise
+                        ? Mathf.Rotate(direction, -Mathf.PI / 2)
+                        : Mathf.Rotate(direction, Mathf.PI / 2);
                 }
             }
         }
         
-        private Line GenerateLine(int index)
+        private LineSegment GenerateLine(int index)
         {
             if (index > Points.Count - 1 || index < 0)
             {
@@ -47,10 +50,10 @@ namespace Raytrace_Scene.Shapes
 
             if (index == Points.Count - 1)
             {
-                return new Line(points[points.Count - 1], points[0]);
+                return new LineSegment(points[points.Count - 1], points[0]);
             }
             
-            return new Line(Points[index], Points[index + 1]);
+            return new LineSegment(Points[index], Points[index + 1]);
         }
 
         public Polygon(List<Vector2> points)
@@ -72,7 +75,7 @@ namespace Raytrace_Scene.Shapes
         public override bool ContainsPoint(Vector2 point)
         {
             int intersect_count = 0;
-            Ray test_ray = new Ray(point, 0);
+            Ray test_ray = new Ray(point, new Vector2(1, 0), null, default);
 
             foreach (var line in lines)
             {
@@ -85,17 +88,17 @@ namespace Raytrace_Scene.Shapes
             return intersect_count % 2 != 0;
         }
 
-        public override float GetNormal(Ray ray)
+        public override Vector2 GetNormal(Ray ray)
         {
-            foreach (Line line in lines)
+            foreach (LineSegment line in lines)
             {
                 if (line.RayIntersects(ray))
                 {
-                    return (float) line.Normal;
+                    return line.Normal;
                 }
             }
 
-            return 0;
+            return default;
         }
 
         public override bool RayIntersects(Ray ray)
@@ -109,6 +112,19 @@ namespace Raytrace_Scene.Shapes
             }
 
             return false;
+        }
+
+        public override Vector2 GetIntersectPoint(Ray ray)
+        {
+            foreach (var line in lines)
+            {
+                if (line.RayIntersects(ray))
+                {
+                    return line.RayIntersectionPoint(ray);
+                }
+            }
+
+            return default;
         }
     }
 }
